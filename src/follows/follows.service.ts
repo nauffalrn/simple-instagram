@@ -1,22 +1,31 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { Follow } from './entities/follow.entity';
+import { Injectable } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
+import { Either, ErrorRegister, left, right } from '../helper/either';
+import { Follow } from './entities/follow.entity';
+
+// Type definitions for service results
+type FollowUserResult = Either<ErrorRegister.CannotFollowSelf | ErrorRegister.AlreadyFollowing, Follow>;
+
+type UnfollowUserResult = Either<ErrorRegister.NotFollowing, void>;
+
+type GetFollowersResult = Either<never, string[]>;
+type GetFollowingsResult = Either<never, string[]>;
 
 @Injectable()
 export class FollowsService {
   private follows: Follow[] = [];
 
-  async followUser(followerId: string, followingId: string): Promise<Follow> {
+  async followUser(followerId: string, followingId: string): Promise<FollowUserResult> {
     if (followerId === followingId) {
-      throw new BadRequestException('Tidak bisa mengikuti diri sendiri');
+      return left(new ErrorRegister.CannotFollowSelf());
     }
 
     const existingFollow = this.follows.find(
-      follow => follow.followerId === followerId && follow.followingId === followingId
+      (follow) => follow.followerId === followerId && follow.followingId === followingId
     );
 
     if (existingFollow) {
-      throw new BadRequestException('Sudah mengikuti pengguna ini');
+      return left(new ErrorRegister.AlreadyFollowing());
     }
 
     const follow = new Follow({
@@ -26,28 +35,29 @@ export class FollowsService {
     });
 
     this.follows.push(follow);
-    return follow;
+    return right(follow);
   }
 
-  async unfollowUser(followerId: string, followingId: string): Promise<void> {
+  async unfollowUser(followerId: string, followingId: string): Promise<UnfollowUserResult> {
     const followIndex = this.follows.findIndex(
-      follow => follow.followerId === followerId && follow.followingId === followingId
+      (follow) => follow.followerId === followerId && follow.followingId === followingId
     );
 
     if (followIndex === -1) {
-      throw new NotFoundException('Belum mengikuti pengguna ini');
+      return left(new ErrorRegister.NotFollowing());
     }
 
     this.follows.splice(followIndex, 1);
+    return right(undefined);
   }
 
-  async getFollowers(userId: string): Promise<string[]> {
-    const followers = this.follows.filter(follow => follow.followingId === userId);
-    return followers.map(follow => follow.followerId);
+  async getFollowers(userId: string): Promise<GetFollowersResult> {
+    const followers = this.follows.filter((follow) => follow.followingId === userId);
+    return right(followers.map((follow) => follow.followerId));
   }
 
-  async getFollowings(userId: string): Promise<string[]> {
-    const followings = this.follows.filter(follow => follow.followerId === userId);
-    return followings.map(follow => follow.followingId);
+  async getFollowings(userId: string): Promise<GetFollowingsResult> {
+    const followings = this.follows.filter((follow) => follow.followerId === userId);
+    return right(followings.map((follow) => follow.followingId));
   }
 }
