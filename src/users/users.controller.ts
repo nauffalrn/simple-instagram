@@ -1,40 +1,33 @@
 import {
-  Controller,
-  Post,
-  Body,
-  Get,
-  Patch,
-  Param,
-  UsePipes,
   BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
   NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Request,
   UseGuards,
 } from '@nestjs/common';
-import { UsersService } from './users.service';
-import { CreateUserDto } from './dto/create-user.dto';
-import { VerifyEmailDto } from './dto/verify-email.dto';
-import { LoginDto } from './dto/login.dto';
-import {
-  createUserSchema,
-  loginSchema,
-  verifyEmailSchema,
-  updateProfileSchema,
-  togglePrivacySchema,
-} from './schemas/user.schema';
+import { AuthGuard } from '../common/authGuard';
 import { ErrorRegister } from '../helper/either';
-import { AuthGuard } from 'src/common/authGuard';
+import { CreateUserDto } from './dto/create-user.dto';
+import { LoginDto } from './dto/login.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import { UsersService } from './users.service';
 
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
-  @UseGuards(AuthGuard)
+
   @Post('signup')
   async signup(@Body() createUserDto: CreateUserDto) {
     const result = await this.usersService.create(createUserDto);
-    console.log('Result:', result);
 
     if (result.isLeft()) {
-      console.log(result.error instanceof ErrorRegister.InputanSalah);
       if (result.error instanceof ErrorRegister.InputanSalah) {
         throw new BadRequestException(result.error.message);
       }
@@ -44,7 +37,6 @@ export class UsersController {
       throw new BadRequestException('Terjadi kesalahan saat pendaftaran');
     }
 
-
     return {
       message: 'Pendaftaran berhasil, silakan cek email untuk verifikasi',
       user: result.value.user,
@@ -52,118 +44,149 @@ export class UsersController {
     };
   }
 
-  // @Post('verify')
-  // @UsePipes(new ZodValidationPipe(verifyEmailSchema))
-  // async verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
-  //   const result = await this.usersService.verifyEmail(verifyEmailDto);
+  @Post('verify')
+  async verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
+    const result = await this.usersService.verifyEmail(verifyEmailDto);
 
-  //   if (result.isLeft()) {
-  //     if (result.error instanceof ErrorRegister.InvalidVerificationToken) {
-  //       throw new BadRequestException(result.error.message);
-  //     }
-  //     if (result.error instanceof ErrorRegister.UserNotFound) {
-  //       throw new NotFoundException(result.error.message);
-  //     }
-  //     throw new BadRequestException('Terjadi kesalahan saat verifikasi email');
-  //   }
+    if (result.isLeft()) {
+      if (result.error instanceof ErrorRegister.InvalidVerificationToken) {
+        throw new BadRequestException(result.error.message);
+      }
+      if (result.error instanceof ErrorRegister.UserNotFound) {
+        throw new NotFoundException(result.error.message);
+      }
+      throw new BadRequestException('Terjadi kesalahan saat verifikasi email');
+    }
 
-  //   return {
-  //     message: 'Email berhasil diverifikasi',
-  //     user: result.value,
-  //   };
-  // }
+    return {
+      message: 'Email berhasil diverifikasi',
+      user: result.value,
+    };
+  }
 
-  // @Post('login')
-  // @UsePipes(new ZodValidationPipe(loginSchema))
-  // async login(@Body() loginDto: LoginDto) {
-  //   const result = await this.usersService.login(loginDto);
+  @Post('login')
+  async login(@Body() loginDto: LoginDto) {
+    const result = await this.usersService.login(loginDto);
 
-  //   if (result.isLeft()) {
-  //     if (result.error instanceof ErrorRegister.UserNotFound) {
-  //       throw new NotFoundException(result.error.message);
-  //     }
-  //     if (result.error instanceof ErrorRegister.EmailNotVerified) {
-  //       throw new BadRequestException(result.error.message);
-  //     }
-  //     if (result.error instanceof ErrorRegister.InvalidPassword) {
-  //       throw new BadRequestException(result.error.message);
-  //     }
-  //     throw new BadRequestException('Login gagal');
-  //   }
+    if (result.isLeft()) {
+      if (result.error instanceof ErrorRegister.UserNotFound) {
+        throw new NotFoundException(result.error.message);
+      }
+      if (result.error instanceof ErrorRegister.EmailNotVerified) {
+        throw new BadRequestException(result.error.message);
+      }
+      if (result.error instanceof ErrorRegister.InvalidPassword) {
+        throw new BadRequestException(result.error.message);
+      }
+      throw new BadRequestException('Login gagal');
+    }
 
-  //   return {
-  //     message: 'Login berhasil',
-  //     user: result.value.user,
-  //     accessToken: result.value.accessToken,
-  //   };
-  // }
+    return {
+      message: 'Login berhasil',
+      user: result.value.user,
+      accessToken: result.value.accessToken,
+    };
+  }
 
-  // @Patch('profile')
-  // @UsePipes(new ZodValidationPipe(updateProfileSchema))
-  // async updateProfile(@Body() updateProfileData: any) {
-  //   const { userId, ...updateProfileDto } = updateProfileData;
-  //   const result = await this.usersService.updateProfile(
-  //     userId,
-  //     updateProfileDto,
-  //   );
+  @UseGuards(AuthGuard)
+  @Patch('profile')
+  async updateProfile(@Request() req, @Body() updateProfileDto: UpdateProfileDto) {
+    const userId = req.user.sub;
+    const result = await this.usersService.updateProfile(userId, updateProfileDto);
 
-  //   if (result.isLeft()) {
-  //     if (result.error instanceof ErrorRegister.UserNotFound) {
-  //       throw new NotFoundException(result.error.message);
-  //     }
-  //     throw new BadRequestException('Gagal memperbarui profil');
-  //   }
+    if (result.isLeft()) {
+      if (result.error instanceof ErrorRegister.UserNotFound) {
+        throw new NotFoundException(result.error.message);
+      }
+      throw new BadRequestException('Gagal memperbarui profil');
+    }
 
-  //   return {
-  //     message: 'Profil berhasil diperbarui',
-  //     user: result.value,
-  //   };
-  // }
+    return {
+      message: 'Profil berhasil diperbarui',
+      user: result.value,
+    };
+  }
 
-  // @Patch('privacy')
-  // @UsePipes(new ZodValidationPipe(togglePrivacySchema))
-  // async togglePrivacy(@Body() privacyData: any) {
-  //   const { userId, isPrivate } = privacyData;
-  //   const result = await this.usersService.updateProfile(userId, { isPrivate });
+  @UseGuards(AuthGuard)
+  @Patch('privacy')
+  async togglePrivacy(@Request() req, @Body() privacyData: { isPrivate: boolean }) {
+    const userId = req.user.sub;
+    const result = await this.usersService.updateProfile(userId, { isPrivate: privacyData.isPrivate });
 
-  //   if (result.isLeft()) {
-  //     if (result.error instanceof ErrorRegister.UserNotFound) {
-  //       throw new NotFoundException(result.error.message);
-  //     }
-  //     throw new BadRequestException('Gagal mengubah status privasi');
-  //   }
+    if (result.isLeft()) {
+      if (result.error instanceof ErrorRegister.UserNotFound) {
+        throw new NotFoundException(result.error.message);
+      }
+      throw new BadRequestException('Gagal mengubah status privasi');
+    }
 
-  //   return {
-  //     message: isPrivate
-  //       ? 'Profil berhasil diubah menjadi private'
-  //       : 'Profil berhasil diubah menjadi publik',
-  //     user: result.value,
-  //   };
-  // }
+    return {
+      message: privacyData.isPrivate
+        ? 'Profil berhasil diubah menjadi private'
+        : 'Profil berhasil diubah menjadi publik',
+      user: result.value,
+    };
+  }
 
-  // @Get(':id')
-  // async getUserById(@Param('id') id: string) {
-  //   const result = await this.usersService.findById(id);
+  @UseGuards(AuthGuard)
+  @Get('me')
+  async getProfile(@Request() req) {
+    const userId = req.user.sub;
+    const result = await this.usersService.findById(userId);
 
-  //   if (result.isLeft()) {
-  //     throw new NotFoundException(result.error.message);
-  //   }
+    if (result.isLeft()) {
+      throw new NotFoundException(result.error.message);
+    }
 
-  //   return {
-  //     user: result.value,
-  //   };
-  // }
+    return {
+      user: result.value,
+    };
+  }
 
-  // @Get('username/:username')
-  // async getUserByUsername(@Param('username') username: string) {
-  //   const result = await this.usersService.findByUsername(username);
+  @Get(':id')
+  async getUserById(@Request() req, @Param('id') id: string) {
+    // Jika user terautentikasi, gunakan ID-nya, jika tidak, gunakan 'guest'
+    const viewerId = req.user?.sub || 'guest';
 
-  //   if (result.isLeft()) {
-  //     throw new NotFoundException(result.error.message);
-  //   }
+    const canViewResult = await this.usersService.canViewUserProfile(viewerId, id);
 
-  //   return {
-  //     user: result.value,
-  //   };
-  // }
+    if (canViewResult.isLeft()) {
+      throw new NotFoundException(canViewResult.error.message);
+    }
+
+    if (!canViewResult.value) {
+      throw new ForbiddenException('Profil ini private. Anda perlu mengikuti pengguna untuk melihat detailnya.');
+    }
+
+    const result = await this.usersService.findById(id);
+
+    if (result.isLeft()) {
+      throw new NotFoundException(result.error.message);
+    }
+
+    return {
+      user: result.value,
+    };
+  }
+
+  @Get('username/:username')
+  async getUserByUsername(@Request() req, @Param('username') username: string) {
+    const result = await this.usersService.findByUsername(username);
+
+    if (result.isLeft()) {
+      throw new NotFoundException(result.error.message);
+    }
+
+    // Jika user terautentikasi, gunakan ID-nya, jika tidak, gunakan 'guest'
+    const viewerId = req.user?.sub || 'guest';
+    const canViewResult = await this.usersService.canViewUserProfile(viewerId, result.value.id);
+
+    if (canViewResult.isLeft() || !canViewResult.value) {
+      throw new ForbiddenException('Profil ini private. Anda perlu mengikuti pengguna untuk melihat detailnya.');
+    }
+
+    return {
+      user: result.value,
+    };
+  }
 }

@@ -1,29 +1,30 @@
 import {
-  Controller,
-  Post,
-  Delete,
-  Body,
-  Get,
-  Param,
-  UsePipes,
   BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
   NotFoundException,
+  Param,
+  Post,
+  Request,
+  UseGuards,
 } from '@nestjs/common';
-import { FollowsService } from './follows.service';
-import { followUserSchema, unfollowUserSchema } from './schemas/follow.schema';
+import { AuthGuard } from '../common/authGuard';
 import { ErrorRegister } from '../helper/either';
+import { FollowsService } from './follows.service';
 
 @Controller('follows')
 export class FollowsController {
   constructor(private readonly followsService: FollowsService) {}
 
+  @UseGuards(AuthGuard)
   @Post()
-  async followUser(@Body() followData: any) {
-    const { followerId, followingId } = followData;
-    const result = await this.followsService.followUser(
-      followerId,
-      followingId,
-    );
+  async followUser(@Request() req, @Body() followData: { followingId: string }) {
+    const followerId = req.user.sub;
+    const { followingId } = followData;
+
+    const result = await this.followsService.followUser(followerId, followingId);
 
     if (result.isLeft()) {
       if (result.error instanceof ErrorRegister.CannotFollowSelf) {
@@ -41,13 +42,12 @@ export class FollowsController {
     };
   }
 
-  @Delete()
-  async unfollowUser(@Body() unfollowData: any) {
-    const { followerId, followingId } = unfollowData;
-    const result = await this.followsService.unfollowUser(
-      followerId,
-      followingId,
-    );
+  @UseGuards(AuthGuard)
+  @Delete(':followingId')
+  async unfollowUser(@Request() req, @Param('followingId') followingId: string) {
+    const followerId = req.user.sub;
+
+    const result = await this.followsService.unfollowUser(followerId, followingId);
 
     if (result.isLeft()) {
       if (result.error instanceof ErrorRegister.NotFollowing) {
@@ -61,13 +61,13 @@ export class FollowsController {
     };
   }
 
+  @UseGuards(AuthGuard)
   @Post('unfollow')
-  async unfollowUserAlt(@Body() unfollowData: any) {
-    const { followerId, followingId } = unfollowData;
-    const result = await this.followsService.unfollowUser(
-      followerId,
-      followingId,
-    );
+  async unfollowUserAlt(@Request() req, @Body() unfollowData: { followingId: string }) {
+    const followerId = req.user.sub;
+    const { followingId } = unfollowData;
+
+    const result = await this.followsService.unfollowUser(followerId, followingId);
 
     if (result.isLeft()) {
       if (result.error instanceof ErrorRegister.NotFollowing) {

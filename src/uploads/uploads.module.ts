@@ -3,17 +3,11 @@ import { MulterModule } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { FollowsModule } from '../follows/follows.module';
-import { UploadsModule } from '../uploads/uploads.module';
-import { UsersModule } from '../users/users.module';
-import { PostsController } from './posts.controller';
-import { PostsService } from './posts.service';
+import { UploadsController } from './uploads.controller';
+import { UploadsService } from './uploads.service';
 
 @Module({
   imports: [
-    UsersModule,
-    FollowsModule,
-    UploadsModule,
     MulterModule.register({
       storage: diskStorage({
         destination: './uploads',
@@ -34,7 +28,8 @@ import { PostsService } from './posts.service';
       },
     }),
   ],
-  controllers: [PostsController],
-  providers: [PostsService],
+  controllers: [UploadsController],
+  providers: [UploadsService],
+  exports: [UploadsService],
 })
-export class PostsModule {}
+export class UploadsModule {}
