@@ -1,19 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { Either, ErrorRegister, left, right } from '../helper/either';
+import { UsersService } from '../users/users.service';
 import { Follow } from './entities/follow.entity';
 
 // Type definitions for service results
 type FollowUserResult = Either<ErrorRegister.CannotFollowSelf | ErrorRegister.AlreadyFollowing, Follow>;
-
 type UnfollowUserResult = Either<ErrorRegister.NotFollowing, void>;
-
 type GetFollowersResult = Either<never, string[]>;
 type GetFollowingsResult = Either<never, string[]>;
 
 @Injectable()
 export class FollowsService {
   private follows: Follow[] = [];
+
+  constructor(private readonly usersService: UsersService) {}
 
   async followUser(followerId: string, followingId: string): Promise<FollowUserResult> {
     if (followerId === followingId) {
@@ -35,6 +36,11 @@ export class FollowsService {
     });
 
     this.follows.push(follow);
+
+    // Update user followers and following arrays
+    await this.usersService.addFollower(followingId, followerId);
+    await this.usersService.addFollowing(followerId, followingId);
+
     return right(follow);
   }
 
@@ -48,6 +54,11 @@ export class FollowsService {
     }
 
     this.follows.splice(followIndex, 1);
+
+    // Update user followers and following arrays
+    await this.usersService.removeFollower(followingId, followerId);
+    await this.usersService.removeFollowing(followerId, followingId);
+
     return right(undefined);
   }
 

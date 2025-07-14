@@ -8,7 +8,7 @@ import { LoginDto } from './dto/login.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { User } from './entities/user.entity';
-import { createUserSchema, loginSchema, verifyEmailSchema } from './schemas/user.schema';
+import { createUserSchema, loginSchema, updateProfileSchema, verifyEmailSchema } from './schemas/user.schema';
 
 const SALT_ROUNDS = 10;
 
@@ -39,6 +39,8 @@ type CanViewProfileResult = Either<ErrorRegister.UserNotFound, boolean>;
 export class UsersService {
   private users: User[] = [];
   private verificationTokens: Map<string, string> = new Map();
+  private tokenExpiryTimers: Map<string, NodeJS.Timeout> = new Map();
+  private readonly TOKEN_EXPIRY_TIME = 24 * 60 * 60 * 1000; // 24 jam dalam milidetik
 
   constructor(private readonly jwtService: JwtService) {}
 
@@ -70,6 +72,14 @@ export class UsersService {
       // Generate token untuk verifikasi email
       const verificationToken = uuidv4();
       this.verificationTokens.set(newUser.email, verificationToken);
+
+      // Set timer untuk menghapus token setelah 24 jam
+      const timer = setTimeout(() => {
+        this.verificationTokens.delete(newUser.email);
+        this.tokenExpiryTimers.delete(newUser.email);
+      }, this.TOKEN_EXPIRY_TIME);
+
+      this.tokenExpiryTimers.set(newUser.email, timer);
 
       const { password, ...userWithoutPassword } = newUser;
 
@@ -114,6 +124,13 @@ export class UsersService {
 
       user.isEmailVerified = true;
       this.verificationTokens.delete(email);
+
+      // Bersihkan timer jika ada
+      const timer = this.tokenExpiryTimers.get(email);
+      if (timer) {
+        clearTimeout(timer);
+        this.tokenExpiryTimers.delete(email);
+      }
 
       const { password, ...userWithoutPassword } = user;
       return right(userWithoutPassword);
@@ -167,18 +184,29 @@ export class UsersService {
   }
 
   async updateProfile(userId: string, updateProfileDto: UpdateProfileDto): Promise<UpdateProfileResult> {
-    const userIndex = this.users.findIndex((user) => user.id === userId);
-    if (userIndex === -1) {
-      return left(new ErrorRegister.UserNotFound());
+    try {
+      // Validasi input dengan Zod
+      const validatedData = updateProfileSchema.parse(updateProfileDto);
+
+      const userIndex = this.users.findIndex((user) => user.id === userId);
+      if (userIndex === -1) {
+        return left(new ErrorRegister.UserNotFound());
+      }
+
+      this.users[userIndex] = {
+        ...this.users[userIndex],
+        ...validatedData,
+      };
+
+      const { password, ...userWithoutPassword } = this.users[userIndex];
+      return right(userWithoutPassword);
+    } catch (error) {
+      if (error.name === 'ZodError' && error.issues) {
+        const errorMessages = error.issues.map((issue) => issue.message).join(', ');
+        return left(new ErrorRegister.InputanSalah(errorMessages));
+      }
+      return left(new ErrorRegister.InputanSalah('Data profil tidak valid'));
     }
-
-    this.users[userIndex] = {
-      ...this.users[userIndex],
-      ...updateProfileDto,
-    };
-
-    const { password, ...userWithoutPassword } = this.users[userIndex];
-    return right(userWithoutPassword);
   }
 
   async findById(userId: string): Promise<FindUserResult> {
@@ -219,5 +247,47 @@ export class UsersService {
     }
 
     return right(Array.isArray(user.followers) && user.followers.includes(viewerId));
+  }
+
+  async addFollower(userId: string, followerId: string): Promise<void> {
+    const userIndex = this.users.findIndex((user) => user.id === userId);
+    if (userIndex !== -1) {
+      // Pastikan array followers ada
+      if (!this.users[userIndex].followers) {
+        this.users[userIndex].followers = [];
+      }
+      // Tambahkan follower jika belum ada
+      if (!this.users[userIndex].followers.includes(followerId)) {
+        this.users[userIndex].followers.push(followerId);
+      }
+    }
+  }
+
+  async addFollowing(userId: string, followingId: string): Promise<void> {
+    const userIndex = this.users.findIndex((user) => user.id === userId);
+    if (userIndex !== -1) {
+      // Pastikan array following ada
+      if (!this.users[userIndex].following) {
+        this.users[userIndex].following = [];
+      }
+      // Tambahkan following jika belum ada
+      if (!this.users[userIndex].following.includes(followingId)) {
+        this.users[userIndex].following.push(followingId);
+      }
+    }
+  }
+
+  async removeFollower(userId: string, followerId: string): Promise<void> {
+    const userIndex = this.users.findIndex((user) => user.id === userId);
+    if (userIndex !== -1 && this.users[userIndex].followers) {
+      this.users[userIndex].followers = this.users[userIndex].followers.filter((id) => id !== followerId);
+    }
+  }
+
+  async removeFollowing(userId: string, followingId: string): Promise<void> {
+    const userIndex = this.users.findIndex((user) => user.id === userId);
+    if (userIndex !== -1 && this.users[userIndex].following) {
+      this.users[userIndex].following = this.users[userIndex].following.filter((id) => id !== followingId);
+    }
   }
 }

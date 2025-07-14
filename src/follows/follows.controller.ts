@@ -61,26 +61,6 @@ export class FollowsController {
     };
   }
 
-  @UseGuards(AuthGuard)
-  @Post('unfollow')
-  async unfollowUserAlt(@Request() req, @Body() unfollowData: { followingId: string }) {
-    const followerId = req.user.sub;
-    const { followingId } = unfollowData;
-
-    const result = await this.followsService.unfollowUser(followerId, followingId);
-
-    if (result.isLeft()) {
-      if (result.error instanceof ErrorRegister.NotFollowing) {
-        throw new NotFoundException(result.error.message);
-      }
-      throw new BadRequestException('Gagal berhenti mengikuti pengguna');
-    }
-
-    return {
-      message: 'Berhasil berhenti mengikuti pengguna',
-    };
-  }
-
   @Get('followers/:userId')
   async getFollowers(@Param('userId') userId: string) {
     const result = await this.followsService.getFollowers(userId);

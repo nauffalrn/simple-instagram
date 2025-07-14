@@ -40,7 +40,7 @@ export const updateProfileSchema = z
     fullName: z.string().optional(),
     bio: z.string().optional(),
     username: z.string().optional(),
-    pictureUrl: z.string().url('URL profil tidak valid').optional(),
+    pictureUrl: z.url('URL profil tidak valid').optional(),
     isPrivate: z.boolean().optional(),
   })
   .refine((data) => Object.keys(data).some((key) => data[key] !== undefined), {

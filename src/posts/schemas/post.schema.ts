@@ -3,10 +3,7 @@ import { z } from 'zod';
 // Skema untuk membuat post
 export const createPostSchema = z.object({
   userId: z.string().min(1, 'User ID harus diisi'),
-
-  pictureUrl: z
-    .url('Format URL tidak valid'),
-
+  pictureUrl: z.url('Format URL tidak valid'),
   caption: z.string().optional(),
 });
 

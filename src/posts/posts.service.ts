@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import * as fs from 'fs';
+import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { Either, ErrorRegister, left, right } from '../helper/either';
 import { UsersService } from '../users/users.service';
@@ -34,7 +36,24 @@ export class PostsService {
       return left(new ErrorRegister.PostNotFound());
     }
 
+    const post = this.posts[postIndex];
     this.posts[postIndex].isDeleted = true;
+
+    // Hapus file gambar jika ada
+    try {
+      // Ambil filename dari pictureUrl (contoh: /uploads/filename.jpg -> filename.jpg)
+      const filename = post.pictureUrl.split('/').pop();
+      if (filename) {
+        const filePath = path.join(process.cwd(), 'uploads', filename);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      }
+    } catch (error) {
+      console.error('Error saat menghapus file gambar:', error);
+      // Lanjutkan proses meskipun gagal menghapus file
+    }
+
     return right(undefined);
   }
 
