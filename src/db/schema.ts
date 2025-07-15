@@ -1,4 +1,5 @@
 import { relations } from 'drizzle-orm';
+import { index } from 'drizzle-orm/pg-core';
 import { boolean, pgTable, text, timestamp, uuid, varchar, unique } from 'drizzle-orm/pg-core';
 
 // User schema
@@ -40,9 +41,9 @@ export const follows = pgTable(
       .references(() => users.id),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
-  (table) => ({
-    uniqueFollowerFollowing: unique().on(table.followerId, table.followingId),
-  })
+  (table) => [
+    index('follows_unique_index').on(table.followerId, table.followingId),
+  ]
 );
 
 // Verification tokens table
