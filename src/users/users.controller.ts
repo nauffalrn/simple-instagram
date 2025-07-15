@@ -111,7 +111,7 @@ export class UsersController {
   @Patch('privacy')
   async togglePrivacy(@Request() req, @Body() privacyData: { isPrivate: boolean }) {
     const userId = req.user.sub;
-    const result = await this.usersService.updateProfile(userId, { isPrivate: privacyData.isPrivate });
+    const result = await this.usersService.updateProfile(userId, { isPrivate: true});
 
     if (result.isLeft()) {
       if (result.error instanceof ErrorRegister.UserNotFound) {
@@ -121,7 +121,7 @@ export class UsersController {
     }
 
     return {
-      message: privacyData.isPrivate
+      message: result.value.isPrivate
         ? 'Profil berhasil diubah menjadi private'
         : 'Profil berhasil diubah menjadi publik',
       user: result.value,

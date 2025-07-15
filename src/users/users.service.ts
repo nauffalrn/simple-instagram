@@ -11,7 +11,7 @@ import { LoginDto } from './dto/login.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { User } from './entities/user.entity';
-import { createUserSchema, loginSchema, updateProfileSchema, verifyEmailSchema } from './schemas/user.schema';
+import { createUserSchema, loginSchema, verifyEmailSchema } from './schemas/user.schema';
 
 const SALT_ROUNDS = 10;
 
@@ -262,17 +262,20 @@ export class UsersService {
 
   async updateProfile(userId: string, updateProfileDto: UpdateProfileDto): Promise<UpdateProfileResult> {
     try {
-      // Validasi input dengan Zod
-      const validatedData = updateProfileSchema.parse(updateProfileDto);
-
       // Cek apakah user ada
       const existingUser = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
       if (existingUser.length === 0) {
         return left(new ErrorRegister.UserNotFound());
       }
 
-      // Update profil di database
-      await this.db.update(users).set(validatedData).where(eq(users.id, userId));
+      console.log('Existing user:', existingUser[0]);
+      let isPrivate = existingUser[0].isPrivate;
+
+      if (isPrivate) {
+        await this.db.update(users).set({ isPrivate: false }).where(eq(users.id, userId));
+      } else {
+        await this.db.update(users).set({ isPrivate: true }).where(eq(users.id, userId));
+      }
 
       // Ambil data user yang sudah diupdate
       const [updatedUser] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
