@@ -1,7 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { and, eq } from 'drizzle-orm'; // Tambahkan import and
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { DrizzleInstance } from '../db';
+import { posts } from '../db/schema';
 import { Either, ErrorRegister, left, right } from '../helper/either';
 import { UsersService } from '../users/users.service';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -13,35 +16,59 @@ type FindPostsByUserIdResult = Either<ErrorRegister.ProfilePrivate | ErrorRegist
 
 @Injectable()
 export class PostsService {
-  private posts: Post[] = [];
-
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    @Inject('DB') private db: DrizzleInstance // Inject DB
+  ) {}
 
   async create(userId: string, createPostDto: CreatePostDto): Promise<CreatePostResult> {
-    const newPost = new Post({
-      id: uuidv4(),
-      userId,
-      pictureUrl: createPostDto.pictureUrl,
-      caption: createPostDto.caption,
-    });
+    try {
+      const postId = uuidv4();
 
-    this.posts.push(newPost);
-    return right(newPost);
+      // Simpan post ke database
+      const [newPost] = await this.db
+        .insert(posts)
+        .values({
+          id: postId,
+          userId: userId,
+          pictureUrl: createPostDto.pictureUrl,
+          caption: createPostDto.caption || '',
+        })
+        .returning();
+
+      // Map database result ke entity
+      const postEntity: Post = {
+        id: newPost.id,
+        userId: newPost.userId,
+        pictureUrl: newPost.pictureUrl,
+        caption: newPost.caption || '',
+        createdAt: newPost.createdAt,
+        isDeleted: newPost.isDeleted,
+      };
+
+      return right(postEntity);
+    } catch (error) {
+      console.error('Error creating post:', error);
+      return left(new ErrorRegister.InputanSalah('Gagal membuat post'));
+    }
   }
 
   async delete(userId: string, postId: string): Promise<DeletePostResult> {
-    const postIndex = this.posts.findIndex((post) => post.id === postId && post.userId === userId);
+    // Cek apakah post ada dan milik user tersebut
+    const postToDelete = await this.db.select().from(posts).where(eq(posts.id, postId)).limit(1);
 
-    if (postIndex === -1) {
+    if (postToDelete.length === 0 || postToDelete[0].userId !== userId) {
       return left(new ErrorRegister.PostNotFound());
     }
 
-    const post = this.posts[postIndex];
-    this.posts[postIndex].isDeleted = true;
+    const post = postToDelete[0];
+
+    // Update status post menjadi deleted
+    await this.db.update(posts).set({ isDeleted: true }).where(eq(posts.id, postId));
 
     // Hapus file gambar jika ada
     try {
-      // Ambil filename dari pictureUrl (contoh: /uploads/filename.jpg -> filename.jpg)
+      // Ambil filename dari pictureUrl
       const filename = post.pictureUrl.split('/').pop();
       if (filename) {
         const filePath = path.join(process.cwd(), 'uploads', filename);
@@ -51,7 +78,6 @@ export class PostsService {
       }
     } catch (error) {
       console.error('Error saat menghapus file gambar:', error);
-      // Lanjutkan proses meskipun gagal menghapus file
     }
 
     return right(undefined);
@@ -68,8 +94,22 @@ export class PostsService {
       return left(new ErrorRegister.ProfilePrivate());
     }
 
-    const userPosts = this.posts.filter((post) => post.userId === userId && !post.isDeleted);
+    // Perbaikan query dengan menggunakan and() untuk menggabungkan kondisi
+    const postsResult = await this.db
+      .select()
+      .from(posts)
+      .where(and(eq(posts.userId, userId), eq(posts.isDeleted, false)));
 
-    return right(userPosts);
+    // Map database results ke entities
+    const postEntities = postsResult.map((post) => ({
+      id: post.id,
+      userId: post.userId,
+      pictureUrl: post.pictureUrl,
+      caption: post.caption || '',
+      createdAt: post.createdAt,
+      isDeleted: post.isDeleted,
+    }));
+
+    return right(postEntities);
   }
 }

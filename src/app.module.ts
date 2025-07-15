@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import { join } from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { DbModule } from './db/db.module'; // Import DbModule
 import { FollowsModule } from './follows/follows.module';
 import { PostsModule } from './posts/posts.module';
 import { UsersModule } from './users/users.module';
@@ -14,6 +15,7 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     PostsModule,
     FollowsModule,
+    DbModule, // Tambahkan DbModule di sini
     JwtModule.register({
       global: true,
       privateKey: fs.readFileSync('private.key'),
