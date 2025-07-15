@@ -1,8 +1,5 @@
 import { Module } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import { v4 as uuidv4 } from 'uuid';
 import { FollowsModule } from '../follows/follows.module';
 import { UploadsModule } from '../uploads/uploads.module';
 import { UsersModule } from '../users/users.module';
@@ -15,20 +12,7 @@ import { PostsService } from './posts.service';
     FollowsModule,
     UploadsModule,
     MulterModule.register({
-      storage: diskStorage({
-        destination: './uploads',
-        filename: (req, file, callback) => {
-          const uniqueName = `${Date.now()}-${uuidv4()}`;
-          const ext = extname(file.originalname);
-          callback(null, `${uniqueName}${ext}`);
-        },
-      }),
-      fileFilter: (req, file, callback) => {
-        if (!file.originalname.match(/\.(jpg|jpeg|png|gif)$/)) {
-          return callback(new Error('Hanya file gambar yang diperbolehkan!'), false);
-        }
-        callback(null, true);
-      },
+      storage: undefined, // Pakai memory storage (default)
       limits: {
         fileSize: 5 * 1024 * 1024, // 5MB
       },

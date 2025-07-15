@@ -36,7 +36,7 @@ export class PostsController {
     }
 
     // Generate URL untuk file yang diupload
-    const pictureUrl = this.uploadsService.getFileUrl(file.filename);
+    const pictureUrl = await this.uploadsService.uploadToCloudinary(file);
 
     // Buat objek lengkap untuk post
     const postData: CreatePostDto = {

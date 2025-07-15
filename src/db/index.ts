@@ -2,8 +2,7 @@ import * as dotenv from 'dotenv';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { follows, posts, users, verificationTokens } from './schema';
-// Perbaikan: gunakan CommonJS require untuk postgres
-const postgres = require('postgres');
+import * as postgres from 'postgres';
 
 // Load environment variables
 dotenv.config();

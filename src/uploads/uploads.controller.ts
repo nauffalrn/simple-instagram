@@ -15,12 +15,11 @@ export class UploadsController {
       throw new BadRequestException('File tidak ditemukan atau format tidak valid');
     }
 
-    const fileUrl = this.uploadsService.getFileUrl(file.filename);
+    const fileUrl = await this.uploadsService.uploadToCloudinary(file);
 
     return {
-      message: 'File berhasil diupload',
+      message: 'File berhasil diupload ke Cloudinary',
       fileUrl,
-      filename: file.filename,
     };
   }
 }
