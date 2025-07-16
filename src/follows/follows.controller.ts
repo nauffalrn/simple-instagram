@@ -61,27 +61,27 @@ export class FollowsController {
     };
   }
 
-  @Get('followers/:userId')
-  async getFollowers(@Param('userId') userId: string) {
+  @UseGuards(AuthGuard)
+  @Get('followers')
+  async getFollowers(@Request() req) {
+    const userId = req.user.sub;
     const result = await this.followsService.getFollowers(userId);
-
     if (result.isLeft()) {
       throw new BadRequestException('Gagal mengambil daftar pengikut');
     }
-
     return {
       followers: result.value,
     };
   }
 
-  @Get('followings/:userId')
-  async getFollowings(@Param('userId') userId: string) {
+  @UseGuards(AuthGuard)
+  @Get('followings')
+  async getFollowings(@Request() req) {
+    const userId = req.user.sub;
     const result = await this.followsService.getFollowings(userId);
-
     if (result.isLeft()) {
       throw new BadRequestException('Gagal mengambil daftar yang diikuti');
     }
-
     return {
       followings: result.value,
     };

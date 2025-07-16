@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { DrizzleInstance } from '../db';
-import { follows } from '../db/schema';
+import { follows, users } from '../db/schema';
 import { Either, ErrorRegister, left, right } from '../helper/either';
 import { UsersService } from '../users/users.service';
 import { Follow } from './entities/follow.entity';
@@ -11,8 +11,14 @@ import { followUserSchema } from './schemas/follow.schema';
 // Type definitions for service results
 type FollowUserResult = Either<ErrorRegister.CannotFollowSelf | ErrorRegister.AlreadyFollowing, Follow>;
 type UnfollowUserResult = Either<ErrorRegister.NotFollowing, void>;
-type GetFollowersResult = Either<never, string[]>;
-type GetFollowingsResult = Either<never, string[]>;
+type GetFollowersResult = Either<
+  never,
+  { fullName: string | null; username: string | null; pictureUrl: string | null }[]
+>;
+type GetFollowingsResult = Either<
+  never,
+  { fullName: string | null; username: string | null; pictureUrl: string | null }[]
+>;
 
 @Injectable()
 export class FollowsService {
@@ -28,12 +34,11 @@ export class FollowsService {
 
     const validation = followUserSchema.parse({ followerId, followingId });
 
-
     // Cek apakah sudah follow
     const existingFollow = await this.db
       .select()
       .from(follows)
-      .where(and(eq(follows.followerId, validation.followerId), eq(follows.followingId,   validation.followingId)))
+      .where(and(eq(follows.followerId, validation.followerId), eq(follows.followingId, validation.followingId)))
       .limit(1);
 
     if (existingFollow.length > 0) {
@@ -91,19 +96,31 @@ export class FollowsService {
 
   async getFollowers(userId: string): Promise<GetFollowersResult> {
     const followerRecords = await this.db
-      .select({ followerId: follows.followerId })
+      .select({
+        fullName: users.fullName,
+        username: users.username,
+        pictureUrl: users.pictureUrl,
+      })
       .from(follows)
+      .innerJoin(users, eq(follows.followerId, users.id))
       .where(eq(follows.followingId, userId));
 
-    return right(followerRecords.map((record) => record.followerId));
+    // followerRecords sudah hanya berisi 3 field
+    return right(followerRecords);
   }
 
   async getFollowings(userId: string): Promise<GetFollowingsResult> {
     const followingRecords = await this.db
-      .select({ followingId: follows.followingId })
+      .select({
+        fullName: users.fullName,
+        username: users.username,
+        pictureUrl: users.pictureUrl,
+      })
       .from(follows)
+      .innerJoin(users, eq(follows.followingId, users.id))
       .where(eq(follows.followerId, userId));
 
-    return right(followingRecords.map((record) => record.followingId));
+    // followingRecords sudah hanya berisi 3 field
+    return right(followingRecords);
   }
 }
