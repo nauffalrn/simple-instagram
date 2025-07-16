@@ -63,51 +63,59 @@ export class UsersService {
     try {
       const validatedData = createUserSchema.parse(createUserDto);
 
-      const existingUser = await this.db.select().from(users).where(eq(users.email, validatedData.email)).limit(1);
-      if (existingUser.length > 0) {
-        return left(new ErrorRegister.EmailAlreadyRegistered());
-      }
+      // Mulai transaksi
+      const result = await this.db.transaction<CreateUserResult>(async (trx) => {
+        // Cek user sudah ada
+        const existingUser = await trx.select().from(users).where(eq(users.email, validatedData.email)).limit(1);
+        if (existingUser.length > 0) {
+          return left(new ErrorRegister.EmailAlreadyRegistered());
+        }
 
-      const hashedPassword = await bcrypt.hash(validatedData.password, SALT_ROUNDS);
+        const hashedPassword = await bcrypt.hash(validatedData.password, SALT_ROUNDS);
+        const userId = uuidv4();
 
-      const userId = uuidv4();
+        // Insert user ke DB dalam transaksi
+        const [newUser] = await trx
+          .insert(users)
+          .values({
+            id: userId,
+            email: validatedData.email,
+            password: hashedPassword,
+            fullName: createUserDto.fullName || '',
+            isEmailVerified: false,
+            isPrivate: false,
+          })
+          .returning();
 
-      const [newUser] = await this.db
-        .insert(users)
-        .values({
-          id: userId,
-          email: validatedData.email,
-          password: hashedPassword,
-          fullName: createUserDto.fullName || '',
-          isEmailVerified: false,
-          isPrivate: false,
-        })
-        .returning();
+        // Generate token verifikasi
+        const verifyToken = this.jwtService.sign(
+          { sub: newUser.id, email: newUser.email, type: 'verify' },
+          { expiresIn: '24h' }
+        );
 
-      const verifyToken = this.jwtService.sign(
-        { sub: newUser.id, email: newUser.email, type: 'verify' },
-        { expiresIn: '24h' }
-      );
+        // Kirim email verifikasi (jika gagal, lempar error agar rollback)
+        await this.emailService.sendVerificationEmail(newUser.email, verifyToken);
 
-      await this.emailService.sendVerificationEmail(newUser.email, verifyToken);
+        const userEntity: User = {
+          id: newUser.id,
+          email: newUser.email,
+          password: newUser.password,
+          fullName: newUser.fullName || '',
+          isEmailVerified: newUser.isEmailVerified,
+          isPrivate: newUser.isPrivate || false,
+          followers: [],
+          following: [],
+        };
 
-      const userEntity: User = {
-        id: newUser.id,
-        email: newUser.email,
-        password: newUser.password,
-        fullName: newUser.fullName || '',
-        isEmailVerified: newUser.isEmailVerified,
-        isPrivate: newUser.isPrivate || false,
-        followers: [],
-        following: [],
-      };
+        const { password, ...userWithoutPassword } = userEntity;
 
-      const { password, ...userWithoutPassword } = userEntity;
-
-      return right({
-        user: userWithoutPassword,
-        verificationToken: verifyToken,
+        return right({
+          user: userWithoutPassword,
+          verificationToken: verifyToken,
+        });
       });
+
+      return result;
     } catch (error) {
       if (error.name === 'ZodError' && error.issues) {
         const errorMessages = error.issues
@@ -176,39 +184,42 @@ export class UsersService {
 
   async updateProfile(userId: string, updateProfileDto: UpdateProfileDto): Promise<UpdateProfileResult> {
     try {
-      const existingUser = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
-      if (existingUser.length === 0) {
-        return left(new ErrorRegister.UserNotFound());
-      }
+      return await this.db.transaction<UpdateProfileResult>(async (trx) => {
+        const existingUser = await trx.select().from(users).where(eq(users.id, userId)).limit(1);
+        if (existingUser.length === 0) {
+          return left(new ErrorRegister.UserNotFound());
+        }
 
-      const [updatedRecord] = await this.db
-        .update(users)
-        .set({
-          fullName: updateProfileDto.fullName,
-          bio: updateProfileDto.bio,
-          username: updateProfileDto.username,
-          pictureUrl: updateProfileDto.pictureUrl,
-          isPrivate: updateProfileDto.isPrivate !== undefined ? updateProfileDto.isPrivate : existingUser[0].isPrivate,
-        })
-        .where(eq(users.id, userId))
-        .returning();
+        const [updatedRecord] = await trx
+          .update(users)
+          .set({
+            fullName: updateProfileDto.fullName,
+            bio: updateProfileDto.bio,
+            username: updateProfileDto.username,
+            pictureUrl: updateProfileDto.pictureUrl,
+            isPrivate:
+              updateProfileDto.isPrivate !== undefined ? updateProfileDto.isPrivate : existingUser[0].isPrivate,
+          })
+          .where(eq(users.id, userId))
+          .returning();
 
-      if (!updatedRecord) {
-        return left(new ErrorRegister.UserNotFound());
-      }
+        if (!updatedRecord) {
+          return left(new ErrorRegister.UserNotFound());
+        }
 
-      const userProfile: Omit<User, 'password'> = {
-        id: updatedRecord.id,
-        email: updatedRecord.email,
-        fullName: updatedRecord.fullName || '',
-        bio: updatedRecord.bio || '',
-        username: updatedRecord.username || '',
-        pictureUrl: updatedRecord.pictureUrl || '',
-        isEmailVerified: updatedRecord.isEmailVerified,
-        isPrivate: updatedRecord.isPrivate,
-      };
+        const userProfile: Omit<User, 'password'> = {
+          id: updatedRecord.id,
+          email: updatedRecord.email,
+          fullName: updatedRecord.fullName || '',
+          bio: updatedRecord.bio || '',
+          username: updatedRecord.username || '',
+          pictureUrl: updatedRecord.pictureUrl || '',
+          isEmailVerified: updatedRecord.isEmailVerified,
+          isPrivate: updatedRecord.isPrivate,
+        };
 
-      return right(userProfile);
+        return right(userProfile);
+      });
     } catch (error) {
       if (error.name === 'ZodError' && error.issues) {
         const errorMessages = error.issues.map((issue) => issue.message).join(', ');
