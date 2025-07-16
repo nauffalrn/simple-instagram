@@ -1,3 +1,4 @@
+import { HttpService } from '@nestjs/axios';
 import { Inject, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
@@ -6,12 +7,14 @@ import { v4 as uuidv4 } from 'uuid';
 import { DrizzleInstance } from '../db';
 import { follows, users } from '../db/schema';
 import { Either, ErrorRegister, left, right } from '../helper/either';
+import { UploadsService } from '../uploads/uploads.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { EmailService } from './email.service';
 import { User } from './entities/user.entity';
 import { createUserSchema, loginSchema } from './schemas/user.schema';
+import { lastValueFrom } from 'rxjs';
 
 const SALT_ROUNDS = 10;
 
@@ -56,12 +59,17 @@ export class UsersService {
   constructor(
     private readonly jwtService: JwtService,
     @Inject('DB') private db: DrizzleInstance,
-    private readonly emailService: EmailService
+    private readonly emailService: EmailService,
+    private readonly httpService: HttpService,
+    private readonly uploadsService: UploadsService
   ) {}
 
   async create(createUserDto: CreateUserDto): Promise<CreateUserResult> {
     try {
       const validatedData = createUserSchema.parse(createUserDto);
+
+      // Ambil avatar random dari API eksternal
+      const avatarUrl = await this.getRandomAvatarUrl();
 
       // Mulai transaksi
       const result = await this.db.transaction<CreateUserResult>(async (trx) => {
@@ -84,6 +92,7 @@ export class UsersService {
             fullName: createUserDto.fullName || '',
             isEmailVerified: false,
             isPrivate: false,
+            pictureUrl: avatarUrl, // <-- set avatar random di sini
           })
           .returning();
 
@@ -103,6 +112,7 @@ export class UsersService {
           fullName: newUser.fullName || '',
           isEmailVerified: newUser.isEmailVerified,
           isPrivate: newUser.isPrivate || false,
+          pictureUrl: newUser.pictureUrl || '',
           followers: [],
           following: [],
         };
@@ -317,5 +327,36 @@ export class UsersService {
 
   async markEmailVerified(userId: string): Promise<void> {
     await this.db.update(users).set({ isEmailVerified: true }).where(eq(users.id, userId));
+  }
+
+  // Tambahkan method ini di bawah class UsersService
+  private async getRandomAvatarUrl(): Promise<string> {
+    // Ambil gambar random dari API eksternal
+    const url = 'https://xsgames.co/randomusers/avatar.php?g=pixel';
+    try {
+      // Ambil gambar sebagai buffer
+      const response = await lastValueFrom(this.httpService.get(url, { responseType: 'arraybuffer' }));
+      const buffer = Buffer.from(response.data);
+
+      // Upload ke Cloudinary
+      const file: Express.Multer.File = {
+        fieldname: 'file',
+        originalname: 'avatar.png',
+        encoding: '7bit',
+        mimetype: 'image/png',
+        buffer,
+        size: buffer.length,
+        stream: undefined as any, // Tidak dipakai di upload_stream
+        destination: '',
+        filename: '',
+        path: '',
+      };
+
+      const uploadedUrl = await this.uploadsService.uploadToCloudinary(file);
+      return uploadedUrl;
+    } catch (err) {
+      // fallback jika gagal, pakai URL randomuser langsung
+      return url;
+    }
   }
 }
