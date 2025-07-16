@@ -8,20 +8,24 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { AuthGuard } from '../common/authGuard';
 import { ErrorRegister } from '../helper/either';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { VerifyEmailDto } from './dto/verify-email.dto';
 import { UsersService } from './users.service';
 
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly jwtService: JwtService // Tambahkan ini
+  ) {}
 
   @Post('signup')
   async signup(@Body() createUserDto: CreateUserDto) {
@@ -40,27 +44,6 @@ export class UsersController {
     return {
       message: 'Pendaftaran berhasil, silakan cek email untuk verifikasi',
       user: result.value.user,
-      verificationToken: result.value.verificationToken,
-    };
-  }
-
-  @Post('verify')
-  async verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
-    const result = await this.usersService.verifyEmail(verifyEmailDto);
-
-    if (result.isLeft()) {
-      if (result.error instanceof ErrorRegister.InvalidVerificationToken) {
-        throw new BadRequestException(result.error.message);
-      }
-      if (result.error instanceof ErrorRegister.UserNotFound) {
-        throw new NotFoundException(result.error.message);
-      }
-      throw new BadRequestException('Terjadi kesalahan saat verifikasi email');
-    }
-
-    return {
-      message: 'Email berhasil diverifikasi',
-      user: result.value,
     };
   }
 
@@ -111,7 +94,7 @@ export class UsersController {
   @Patch('privacy')
   async togglePrivacy(@Request() req, @Body() privacyData: { isPrivate: boolean }) {
     const userId = req.user.sub;
-    const result = await this.usersService.updateProfile(userId, { isPrivate: true});
+    const result = await this.usersService.updateProfile(userId, { isPrivate: true });
 
     if (result.isLeft()) {
       if (result.error instanceof ErrorRegister.UserNotFound) {
@@ -141,6 +124,20 @@ export class UsersController {
     return {
       user: result.value,
     };
+  }
+
+  @Get('verify')
+  async verifyEmail(@Query('token') token: string) {
+    try {
+      const payload = this.jwtService.verify(token);
+      if (payload.type !== 'verify') throw new BadRequestException('Token tidak valid');
+
+      await this.usersService.markEmailVerified(payload.sub);
+
+      return { message: 'Email berhasil diverifikasi' };
+    } catch (err) {
+      throw new BadRequestException('Token verifikasi tidak valid atau kedaluwarsa');
+    }
   }
 
   @Get(':id')
@@ -190,3 +187,4 @@ export class UsersController {
     };
   }
 }
+  

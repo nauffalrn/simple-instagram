@@ -46,13 +46,6 @@ export const follows = pgTable(
   ]
 );
 
-// Verification tokens table
-export const verificationTokens = pgTable('verification_tokens', {
-  email: varchar('email', { length: 255 }).primaryKey(),
-  token: varchar('token', { length: 255 }).notNull(),
-  expiresAt: timestamp('expires_at').notNull(),
-});
-
 // Definisi relasi untuk users
 export const usersRelations = relations(users, ({ many }) => ({
   posts: many(posts),

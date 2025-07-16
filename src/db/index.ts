@@ -1,7 +1,7 @@
 import * as dotenv from 'dotenv';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import { follows, posts, users, verificationTokens } from './schema';
+import * as schema from './schema';
 import * as postgres from 'postgres';
 
 // Load environment variables
@@ -23,7 +23,7 @@ export const client = postgres(connectionString);
 
 // Create drizzle instance
 export const db = drizzle(client, {
-  schema: { users, posts, follows, verificationTokens },
+  schema: schema
 });
 
 // Migration function
@@ -43,8 +43,7 @@ export async function runMigrations() {
 
 // Type untuk digunakan di service
 export type DrizzleInstance = PostgresJsDatabase<{
-  users: typeof users;
-  posts: typeof posts;
-  follows: typeof follows;
-  verificationTokens: typeof verificationTokens;
+  users: typeof schema.users;
+  posts: typeof schema.posts;
+  follows: typeof schema.follows;
 }>;

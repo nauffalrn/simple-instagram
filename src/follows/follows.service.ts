@@ -6,6 +6,7 @@ import { follows } from '../db/schema';
 import { Either, ErrorRegister, left, right } from '../helper/either';
 import { UsersService } from '../users/users.service';
 import { Follow } from './entities/follow.entity';
+import { followUserSchema } from './schemas/follow.schema';
 
 // Type definitions for service results
 type FollowUserResult = Either<ErrorRegister.CannotFollowSelf | ErrorRegister.AlreadyFollowing, Follow>;
@@ -25,11 +26,14 @@ export class FollowsService {
       return left(new ErrorRegister.CannotFollowSelf());
     }
 
+    const validation = followUserSchema.parse({ followerId, followingId });
+
+
     // Cek apakah sudah follow
     const existingFollow = await this.db
       .select()
       .from(follows)
-      .where(and(eq(follows.followerId, followerId), eq(follows.followingId, followingId)))
+      .where(and(eq(follows.followerId, validation.followerId), eq(follows.followingId,   validation.followingId)))
       .limit(1);
 
     if (existingFollow.length > 0) {

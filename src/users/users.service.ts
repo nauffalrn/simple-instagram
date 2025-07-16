@@ -4,12 +4,12 @@ import * as bcrypt from 'bcrypt';
 import { and, eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { DrizzleInstance } from '../db';
-import { follows, users, verificationTokens } from '../db/schema';
+import { follows, users } from '../db/schema';
 import { Either, ErrorRegister, left, right } from '../helper/either';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { VerifyEmailDto } from './dto/verify-email.dto';
+import { EmailService } from './email.service';
 import { User } from './entities/user.entity';
 import { createUserSchema, loginSchema, verifyEmailSchema } from './schemas/user.schema';
 
@@ -45,7 +45,8 @@ export class UsersService {
 
   constructor(
     private readonly jwtService: JwtService,
-    @Inject('DB') private db: DrizzleInstance
+    @Inject('DB') private db: DrizzleInstance,
+    private readonly emailService: EmailService
   ) {}
 
   async create(createUserDto: CreateUserDto): Promise<CreateUserResult> {
@@ -76,32 +77,14 @@ export class UsersService {
         })
         .returning();
 
-      // Generate token untuk verifikasi email
-      const verificationToken = uuidv4();
+      // Generate JWT untuk verifikasi email
+      const verifyToken = this.jwtService.sign(
+        { sub: newUser.id, email: newUser.email, type: 'verify' },
+        { expiresIn: '24h' }
+      );
 
-      // Simpan token ke database
-      await this.db
-        .insert(verificationTokens)
-        .values({
-          email: newUser.email,
-          token: verificationToken,
-          expiresAt: new Date(Date.now() + this.TOKEN_EXPIRY_TIME),
-        })
-        .onConflictDoUpdate({
-          target: verificationTokens.email,
-          set: {
-            token: verificationToken,
-            expiresAt: new Date(Date.now() + this.TOKEN_EXPIRY_TIME),
-          },
-        });
-
-      // Set timer untuk menghapus token setelah 24 jam
-      const timer = setTimeout(async () => {
-        await this.db.delete(verificationTokens).where(eq(verificationTokens.email, newUser.email));
-        this.tokenExpiryTimers.delete(newUser.email);
-      }, this.TOKEN_EXPIRY_TIME);
-
-      this.tokenExpiryTimers.set(newUser.email, timer);
+      // Kirim email verifikasi via Resend
+      await this.emailService.sendVerificationEmail(newUser.email, verifyToken);
 
       // Mapping ke User entity
       const userEntity: User = {
@@ -119,7 +102,7 @@ export class UsersService {
 
       return right({
         user: userWithoutPassword,
-        verificationToken,
+        verificationToken: verifyToken,
       });
     } catch (error) {
       console.log('Validation error:', error);
@@ -137,70 +120,6 @@ export class UsersService {
         return left(new ErrorRegister.InputanSalah(errorMessages));
       }
       return left(new ErrorRegister.InputanSalah('Data tidak valid'));
-    }
-  }
-
-  async verifyEmail(verifyEmailDto: VerifyEmailDto): Promise<VerifyEmailResult> {
-    try {
-      // Validasi input
-      const validatedData = verifyEmailSchema.parse(verifyEmailDto);
-      const { email, verificationToken } = validatedData;
-
-      // Cari token di database
-      const tokenRecord = await this.db
-        .select()
-        .from(verificationTokens)
-        .where(eq(verificationTokens.email, email))
-        .limit(1);
-
-      if (tokenRecord.length === 0 || tokenRecord[0].token !== verificationToken) {
-        return left(new ErrorRegister.InvalidVerificationToken());
-      }
-
-      // Cari user
-      const userRecord = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
-
-      if (userRecord.length === 0) {
-        return left(new ErrorRegister.UserNotFound());
-      }
-
-      // Update user sebagai terverifikasi
-      await this.db.update(users).set({ isEmailVerified: true }).where(eq(users.email, email));
-
-      // Hapus token verifikasi
-      await this.db.delete(verificationTokens).where(eq(verificationTokens.email, email));
-
-      // Hapus timer jika ada
-      const timer = this.tokenExpiryTimers.get(email);
-      if (timer) {
-        clearTimeout(timer);
-        this.tokenExpiryTimers.delete(email);
-      }
-
-      // Ambil user yang diupdate
-      const [updatedUser] = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
-
-      // Mapping ke entity
-      const userEntity: User = {
-        id: updatedUser.id,
-        email: updatedUser.email,
-        password: updatedUser.password,
-        fullName: updatedUser.fullName || '',
-        isEmailVerified: updatedUser.isEmailVerified,
-        isPrivate: updatedUser.isPrivate || false,
-        followers: [],
-        following: [],
-      };
-
-      const { password, ...userWithoutPassword } = userEntity;
-      return right(userWithoutPassword);
-    } catch (error) {
-      // Error handling tetap sama...
-      if (error.name === 'ZodError' && error.issues) {
-        const errorMessages = error.issues.map((issue) => issue.message).join(', ');
-        return left(new ErrorRegister.InputanSalah(errorMessages));
-      }
-      return left(new ErrorRegister.InputanSalah('Data verifikasi tidak valid'));
     }
   }
 
@@ -409,5 +328,10 @@ export class UsersService {
   async removeFollowing(userId: string, followingId: string): Promise<void> {
     // Ini sudah ditangani di removeFollower, method ini hanya untuk kompatibilitas
     // dengan kode yang menggunakannya
+  }
+
+  // Tambahkan method untuk update status email verified
+  async markEmailVerified(userId: string): Promise<void> {
+    await this.db.update(users).set({ isEmailVerified: true }).where(eq(users.id, userId));
   }
 }
