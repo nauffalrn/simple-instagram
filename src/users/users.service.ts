@@ -11,9 +11,19 @@ import { LoginDto } from './dto/login.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { EmailService } from './email.service';
 import { User } from './entities/user.entity';
-import { createUserSchema, loginSchema, verifyEmailSchema } from './schemas/user.schema';
+import { createUserSchema, loginSchema } from './schemas/user.schema';
 
 const SALT_ROUNDS = 10;
+
+// Tipe output untuk profil publik
+type PublicProfileOutput = {
+  id: string;
+  email: string;
+  fullName: string | null;
+  bio: string | null;
+  username: string | null;
+  pictureUrl: string | null;
+};
 
 // Type definitions untuk hasil service
 type CreateUserResult = Either<
@@ -35,7 +45,7 @@ type LoginResult = Either<
 >;
 
 type UpdateProfileResult = Either<ErrorRegister.UserNotFound | ErrorRegister.InputanSalah, Omit<User, 'password'>>;
-type FindUserResult = Either<ErrorRegister.UserNotFound, Omit<User, 'password'>>;
+type FindUserResult = Either<ErrorRegister.UserNotFound, PublicProfileOutput>; // Diubah ke PublicProfileOutput
 type CanViewProfileResult = Either<ErrorRegister.UserNotFound, boolean>;
 
 @Injectable()
@@ -51,7 +61,6 @@ export class UsersService {
 
   async create(createUserDto: CreateUserDto): Promise<CreateUserResult> {
     try {
-      // Validasi input dengan Zod
       const validatedData = createUserSchema.parse(createUserDto);
 
       const existingUser = await this.db.select().from(users).where(eq(users.email, validatedData.email)).limit(1);
@@ -59,12 +68,10 @@ export class UsersService {
         return left(new ErrorRegister.EmailAlreadyRegistered());
       }
 
-      // Hash password
       const hashedPassword = await bcrypt.hash(validatedData.password, SALT_ROUNDS);
 
       const userId = uuidv4();
 
-      // Simpan user ke database
       const [newUser] = await this.db
         .insert(users)
         .values({
@@ -77,16 +84,13 @@ export class UsersService {
         })
         .returning();
 
-      // Generate JWT untuk verifikasi email
       const verifyToken = this.jwtService.sign(
         { sub: newUser.id, email: newUser.email, type: 'verify' },
         { expiresIn: '24h' }
       );
 
-      // Kirim email verifikasi via Resend
       await this.emailService.sendVerificationEmail(newUser.email, verifyToken);
 
-      // Mapping ke User entity
       const userEntity: User = {
         id: newUser.id,
         email: newUser.email,
@@ -105,13 +109,9 @@ export class UsersService {
         verificationToken: verifyToken,
       });
     } catch (error) {
-      console.log('Validation error:', error);
-
-      // Perbaikan untuk ZodError
       if (error.name === 'ZodError' && error.issues) {
         const errorMessages = error.issues
           .map((issue) => {
-            // Tambahkan nama field jika available
             const path = issue.path.length > 0 ? issue.path[issue.path.length - 1] + ': ' : '';
             return path + issue.message;
           })
@@ -125,11 +125,9 @@ export class UsersService {
 
   async login(loginDto: LoginDto): Promise<LoginResult> {
     try {
-      // Validasi input
       const validatedData = loginSchema.parse(loginDto);
       const { email, password } = validatedData;
 
-      // Cari user di database
       const userRecord = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
 
       if (userRecord.length === 0) {
@@ -142,17 +140,14 @@ export class UsersService {
         return left(new ErrorRegister.EmailNotVerified());
       }
 
-      // Bandingkan password dengan hash yang tersimpan
       const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
         return left(new ErrorRegister.InvalidPassword());
       }
 
-      // Generate JWT token
       const payload = { sub: user.id, email: user.email };
       const accessToken = this.jwtService.sign(payload);
 
-      // Mapping ke entity
       const userEntity: User = {
         id: user.id,
         email: user.email,
@@ -181,44 +176,45 @@ export class UsersService {
 
   async updateProfile(userId: string, updateProfileDto: UpdateProfileDto): Promise<UpdateProfileResult> {
     try {
-      // Cek apakah user ada
       const existingUser = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
       if (existingUser.length === 0) {
         return left(new ErrorRegister.UserNotFound());
       }
 
-      console.log('Existing user:', existingUser[0]);
-      let isPrivate = existingUser[0].isPrivate;
+      const [updatedRecord] = await this.db
+        .update(users)
+        .set({
+          fullName: updateProfileDto.fullName,
+          bio: updateProfileDto.bio,
+          username: updateProfileDto.username,
+          pictureUrl: updateProfileDto.pictureUrl,
+          isPrivate: updateProfileDto.isPrivate !== undefined ? updateProfileDto.isPrivate : existingUser[0].isPrivate,
+        })
+        .where(eq(users.id, userId))
+        .returning();
 
-      if (isPrivate) {
-        await this.db.update(users).set({ isPrivate: false }).where(eq(users.id, userId));
-      } else {
-        await this.db.update(users).set({ isPrivate: true }).where(eq(users.id, userId));
+      if (!updatedRecord) {
+        return left(new ErrorRegister.UserNotFound());
       }
 
-      // Ambil data user yang sudah diupdate
-      const [updatedUser] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
-
-      // Mapping ke entity
-      const userEntity: User = {
-        id: updatedUser.id,
-        email: updatedUser.email,
-        password: updatedUser.password,
-        fullName: updatedUser.fullName || '',
-        isEmailVerified: updatedUser.isEmailVerified,
-        isPrivate: updatedUser.isPrivate || false,
-        followers: [],
-        following: [],
+      const userProfile: Omit<User, 'password'> = {
+        id: updatedRecord.id,
+        email: updatedRecord.email,
+        fullName: updatedRecord.fullName || '',
+        bio: updatedRecord.bio || '',
+        username: updatedRecord.username || '',
+        pictureUrl: updatedRecord.pictureUrl || '',
+        isEmailVerified: updatedRecord.isEmailVerified,
+        isPrivate: updatedRecord.isPrivate,
       };
 
-      const { password, ...userWithoutPassword } = userEntity;
-      return right(userWithoutPassword);
+      return right(userProfile);
     } catch (error) {
       if (error.name === 'ZodError' && error.issues) {
         const errorMessages = error.issues.map((issue) => issue.message).join(', ');
         return left(new ErrorRegister.InputanSalah(errorMessages));
       }
-      return left(new ErrorRegister.InputanSalah('Data profil tidak valid'));
+      return left(new ErrorRegister.InputanSalah('Gagal memperbarui profil pengguna'));
     }
   }
 
@@ -231,31 +227,17 @@ export class UsersService {
 
     const user = userRecord[0];
 
-    // Ambil followers dan following dari database
-    const userFollowers = await this.db
-      .select({ followerId: follows.followerId })
-      .from(follows)
-      .where(eq(follows.followingId, userId));
-
-    const userFollowing = await this.db
-      .select({ followingId: follows.followingId })
-      .from(follows)
-      .where(eq(follows.followerId, userId));
-
-    // Mapping ke entity
-    const userEntity: User = {
+    // Bentuk objek userProfile hanya dengan properti yang diinginkan untuk output publik
+    const userProfile: PublicProfileOutput = {
       id: user.id,
       email: user.email,
-      password: user.password,
       fullName: user.fullName || '',
-      isEmailVerified: user.isEmailVerified,
-      isPrivate: user.isPrivate || false,
-      followers: userFollowers.map((f) => f.followerId),
-      following: userFollowing.map((f) => f.followingId),
+      bio: user.bio || '',
+      username: user.username || '',
+      pictureUrl: user.pictureUrl || '',
     };
 
-    const { password, ...userWithoutPassword } = userEntity;
-    return right(userWithoutPassword);
+    return right(userProfile);
   }
 
   async findByUsername(username: string): Promise<FindUserResult> {
@@ -269,12 +251,11 @@ export class UsersService {
       return left(new ErrorRegister.UserNotFound());
     }
 
-    // Gunakan findById untuk mendapatkan user dengan followers/following
+    // Gunakan findById untuk mendapatkan user dengan format PublicProfileOutput
     return this.findById(userRecord[0].id);
   }
 
   async canViewUserProfile(viewerId: string, profileId: string): Promise<CanViewProfileResult> {
-    // Jika melihat profil sendiri, selalu diizinkan
     if (viewerId === profileId) {
       return right(true);
     }
@@ -287,12 +268,10 @@ export class UsersService {
 
     const user = userRecord[0];
 
-    // Jika profil public, langsung return true
     if (!user.isPrivate) {
       return right(true);
     }
 
-    // Cek apakah viewer adalah follower
     const isFollowing = await this.db
       .select()
       .from(follows)
@@ -302,9 +281,7 @@ export class UsersService {
     return right(isFollowing.length > 0);
   }
 
-  // Metode untuk follow/unfollow
   async addFollower(userId: string, followerId: string): Promise<void> {
-    // Ini hanya dipanggil oleh followsService, tidak perlu validasi ulang
     await this.db
       .insert(follows)
       .values({
@@ -316,21 +293,17 @@ export class UsersService {
   }
 
   async addFollowing(userId: string, followingId: string): Promise<void> {
-    // Ini sudah ditangani di addFollower, method ini hanya untuk kompatibilitas
-    // dengan kode yang menggunakannya
+    // Metode ini mungkin tidak diperlukan jika logika follow sepenuhnya ditangani di FollowsService
   }
 
   async removeFollower(userId: string, followerId: string): Promise<void> {
-    // Hapus relasi follower
     await this.db.delete(follows).where(and(eq(follows.followerId, followerId), eq(follows.followingId, userId)));
   }
 
   async removeFollowing(userId: string, followingId: string): Promise<void> {
-    // Ini sudah ditangani di removeFollower, method ini hanya untuk kompatibilitas
-    // dengan kode yang menggunakannya
+    // Metode ini mungkin tidak diperlukan jika logika unfollow sepenuhnya ditangani di FollowsService
   }
 
-  // Tambahkan method untuk update status email verified
   async markEmailVerified(userId: string): Promise<void> {
     await this.db.update(users).set({ isEmailVerified: true }).where(eq(users.id, userId));
   }

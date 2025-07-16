@@ -24,7 +24,7 @@ import { UsersService } from './users.service';
 export class UsersController {
   constructor(
     private readonly usersService: UsersService,
-    private readonly jwtService: JwtService // Tambahkan ini
+    private readonly jwtService: JwtService
   ) {}
 
   @Post('signup')
@@ -94,7 +94,7 @@ export class UsersController {
   @Patch('privacy')
   async togglePrivacy(@Request() req, @Body() privacyData: { isPrivate: boolean }) {
     const userId = req.user.sub;
-    const result = await this.usersService.updateProfile(userId, { isPrivate: true });
+    const result = await this.usersService.updateProfile(userId, { isPrivate: privacyData.isPrivate });
 
     if (result.isLeft()) {
       if (result.error instanceof ErrorRegister.UserNotFound) {
@@ -142,7 +142,6 @@ export class UsersController {
 
   @Get(':id')
   async getUserById(@Request() req, @Param('id') id: string) {
-    // Jika user terautentikasi, gunakan ID-nya, jika tidak, gunakan 'guest'
     const viewerId = req.user?.sub || 'guest';
 
     const canViewResult = await this.usersService.canViewUserProfile(viewerId, id);
@@ -174,7 +173,6 @@ export class UsersController {
       throw new NotFoundException(result.error.message);
     }
 
-    // Jika user terautentikasi, gunakan ID-nya, jika tidak, gunakan 'guest'
     const viewerId = req.user?.sub || 'guest';
     const canViewResult = await this.usersService.canViewUserProfile(viewerId, result.value.id);
 
@@ -187,4 +185,3 @@ export class UsersController {
     };
   }
 }
-  

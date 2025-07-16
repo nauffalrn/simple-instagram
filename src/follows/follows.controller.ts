@@ -43,9 +43,10 @@ export class FollowsController {
   }
 
   @UseGuards(AuthGuard)
-  @Delete(':followingId')
-  async unfollowUser(@Request() req, @Param('followingId') followingId: string) {
+  @Delete()
+  async unfollowUser(@Request() req, @Body() unfollowData: { followingId: string }) {
     const followerId = req.user.sub;
+    const { followingId } = unfollowData;
 
     const result = await this.followsService.unfollowUser(followerId, followingId);
 
