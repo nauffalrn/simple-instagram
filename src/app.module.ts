@@ -5,17 +5,19 @@ import * as fs from 'fs';
 import { join } from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { DbModule } from './db/db.module'; // Import DbModule
+import { DbModule } from './db/db.module';
 import { FollowsModule } from './follows/follows.module';
 import { PostsModule } from './posts/posts.module';
 import { UsersModule } from './users/users.module';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
+    ConfigModule.forRoot(),
     UsersModule,
     PostsModule,
     FollowsModule,
-    DbModule, // Tambahkan DbModule di sini
+    DbModule,
     JwtModule.register({
       global: true,
       privateKey: fs.readFileSync('private.key'),

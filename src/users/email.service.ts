@@ -1,12 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { ConsoleLogger, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 
 @Injectable()
 export class EmailService {
-  private resend: Resend;
+  private readonly logger = new ConsoleLogger(EmailService.name);
+  private readonly resend: Resend;
 
-  constructor() {
-    this.resend = new Resend(process.env.RESEND_API_KEY);
+  constructor(private readonly configService: ConfigService) {
+    const apiKey = this.configService.get<string>('RESEND_API_KEY');
+    this.resend = new Resend(apiKey);
   }
 
   async sendVerificationEmail(to: string, token: string) {
@@ -19,7 +22,7 @@ export class EmailService {
              <a href="${verifyUrl}">${verifyUrl}</a>`,
     });
     if (error) {
-      console.error('Resend error:', error);
+      this.logger.error('Resend error:', error);
       throw error;
     }
   }
